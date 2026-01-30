@@ -270,7 +270,15 @@
         
         let ingredients = [];
         let currentRecipes = [];
-        let favorites = JSON.parse(localStorage.getItem('chefia_favs')) || [];
+        let favorites = [];
+try {
+    const savedFavs = localStorage.getItem('chefia_favs');
+    favorites = savedFavs ? JSON.parse(savedFavs) : [];
+} catch (e) {
+    console.warn("Favoritos corrompidos, resetando storage");
+    localStorage.removeItem('chefia_favs');
+    favorites = [];
+}
         let base64Image = null;
         let isMenuOpen = false;
         let currentView = 'input';
