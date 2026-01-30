@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chef IA - Receitas Inteligentes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        ::-webkit-scrollbar { display: none; }
+        html, body { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .recipe-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .recipe-card:active { transform: scale(0.98); }
+
+        .loading-shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        #side-menu {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        .menu-overlay {
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(4px);
+            transition: opacity 0.3s ease;
+        }
+
+        .analyzing-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.75rem;
+            color: white;
+            z-index: 10;
+        }
+
+        .fav-heart.active {
+            color: #ef4444;
+            animation: heart-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes heart-pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.4); }
+            100% { transform: scale(1); }
+        }
+
+        /* Animação ajustada para 6 segundos (coincidindo com o JS) */
+        .fade-tip {
+            animation: fadeInOut 6s infinite ease-in-out;
+        }
+
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0; transform: translateY(5px); }
+            10%, 90% { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="pb-20 overflow-x-hidden">
+
+    <!-- Menu Lateral -->
+    <div id="menu-overlay" class="fixed inset-0 z-[100] menu-overlay opacity-0 pointer-events-none" onclick="toggleMenu()"></div>
+    <div id="side-menu" class="fixed top-0 right-0 h-full w-72 bg-white z-[101] shadow-2xl translate-x-full p-6 space-y-8">
+        <div class="flex justify-between items-center border-b pb-4">
+            <h2 class="text-xl font-bold text-gray-800 tracking-tight">Menu Principal</h2>
+            <button onclick="toggleMenu()" class="text-gray-400 hover:text-orange-500 text-xl transition-colors"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        
+        <nav class="space-y-2">
+            <button onclick="toggleMenu(); toggleView('input')" class="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-orange-50 text-gray-700 transition-all group text-left">
+                <div class="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-all">
+                    <i class="fa-solid fa-fire text-lg"></i>
+                </div>
+                <span class="font-bold">Cozinhar</span>
+            </button>
+
+            <button onclick="toggleMenu(); toggleView('favorites')" class="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-red-50 text-gray-700 transition-all group text-left">
+                <div class="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-500 group-hover:text-white transition-all">
+                    <i class="fa-solid fa-heart text-lg"></i>
+                </div>
+                <span class="font-bold">Meus Favoritos</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-orange-500 text-white p-6 rounded-b-3xl shadow-lg sticky top-0 z-50">
+        <div class="max-w-md mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold">Chef IA 🍳</h1>
+                <p class="text-sm opacity-90">O que vamos cozinhar hoje?</p>
+            </div>
+            <button onclick="toggleMenu()" class="bg-white/20 p-3 rounded-full hover:bg-white/30 transition shadow-inner">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-md mx-auto p-4 space-y-6">
+
+        <section id="input-view" class="space-y-4">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-sm font-semibold text-gray-700">Ingredientes que você tem:</label>
+                    <button id="btn-clear-all" onclick="clearAllIngredients()" class="text-xs text-red-500 font-bold hidden flex items-center gap-1">
+                        <i class="fa-solid fa-trash-can"></i> Limpar Tudo
+                    </button>
+                </div>
+                
+                <div class="flex gap-2 mb-3">
+                    <input type="text" id="ingredient-input" placeholder="Ex: Frango, tomate, cebola..." 
+                           onkeypress="if(event.key === 'Enter') addIngredientFromInput()"
+                           class="flex-1 p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-orange-400 outline-none transition">
+                    <button onclick="addIngredientFromInput()" class="bg-orange-500 text-white px-4 rounded-xl hover:bg-orange-600 transition">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                </div>
+
+                <div class="relative">
+                    <input type="file" id="image-upload" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                    <button onclick="document.getElementById('image-upload').click()" 
+                            class="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:border-orange-400 hover:text-orange-500 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-camera"></i>
+                        <span>Identificar por Foto</span>
+                    </button>
+                    <div id="image-preview" class="mt-3 hidden relative">
+                        <p class="text-[10px] text-gray-400 uppercase font-bold mb-1">Guia Visual:</p>
+                        <div class="relative overflow-hidden rounded-xl shadow-md border border-gray-200">
+                            <img id="preview-img" class="w-full h-40 object-cover">
+                            <div id="img-analyzing-state" class="analyzing-overlay hidden">
+                                <i class="fa-solid fa-circle-notch animate-spin text-2xl mb-2"></i>
+                                <span class="font-bold text-sm">Analisando ingredientes</span>
+                            </div>
+                        </div>
+                        <button id="btn-clear-img" onclick="clearImage()" class="absolute top-6 right-2 bg-red-500 text-white p-1 rounded-full text-xs shadow-lg z-20">
+                            <i class="fa-solid fa-xmark px-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="tags-container" class="flex flex-wrap gap-2 mt-4"></div>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                <h3 class="text-sm font-semibold text-gray-700">Preferências</h3>
+                
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                        <span class="block mb-1 text-gray-500">Dificuldade</span>
+                        <select id="pref-difficulty" class="w-full p-2 bg-gray-50 rounded-lg outline-none">
+                            <option value="Muito fácil">Muito fácil</option>
+                            <option value="Normal" selected>Normal</option>
+                            <option value="Caprichado">Caprichado</option>
+                        </select>
+                    </div>
+                    <div>
+                        <span class="block mb-1 text-gray-500">Tempo Máximo</span>
+                        <select id="pref-time" class="w-full p-2 bg-gray-50 rounded-lg outline-none">
+                            <option value="15 minutos">15 min</option>
+                            <option value="30 minutos" selected>30 min</option>
+                            <option value="1 hora">1 hora</option>
+                        </select>
+                    </div>
+                    <div class="col-span-2">
+                        <span class="block mb-1 text-gray-500">Tipo de Refeição</span>
+                        <select id="pref-type" class="w-full p-2 bg-gray-50 rounded-lg outline-none">
+                            <option value="Almoço">Almoço</option>
+                            <option value="Jantar">Jantar</option>
+                            <option value="Lanche">Lanche</option>
+                            <option value="Leve/Saudável">Leve/Saudável</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button onclick="generateRecipes()" id="btn-generate" 
+                        class="w-full bg-orange-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-orange-200 hover:bg-orange-600 transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    Gerar Receitas
+                </button>
+            </div>
+        </section>
+
+        <!-- Loading View com Dicas -->
+        <section id="loading-view" class="hidden space-y-4">
+            <div class="text-center py-10 flex flex-col items-center">
+                <div class="inline-block animate-bounce mb-4 text-4xl">🍳</div>
+                <h3 class="font-bold text-gray-700">O Chef está pensando...</h3>
+                <p class="text-sm text-gray-500 mb-8">Criando algo delicioso com seus ingredientes.</p>
+                
+                <div class="bg-orange-50 p-6 rounded-3xl border border-orange-100 w-full max-w-[280px]">
+                    <p class="text-[10px] uppercase font-black text-orange-400 mb-2 tracking-widest">Dica do Chef</p>
+                    <p id="loading-tip" class="text-sm text-orange-800 font-medium leading-relaxed fade-tip italic">
+                        Carregando dicas valiosas...
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section id="results-view" class="hidden space-y-4 pb-10">
+            <div class="flex justify-between items-center px-1">
+                <h3 class="font-bold text-gray-800">Resultados</h3>
+                <div class="flex items-center gap-4">
+                    <button onclick="toggleView('input')" class="text-xs font-bold text-gray-500 flex items-center gap-1">
+                        <i class="fa-solid fa-arrow-left"></i> Voltar
+                    </button>
+                    <button onclick="sortRecipesByTime()" class="text-xs font-bold text-orange-600 flex items-center gap-1">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Ordenar por Tempo
+                    </button>
+                </div>
+            </div>
+            <div id="recipes-list" class="space-y-4"></div>
+        </section>
+
+        <section id="detail-view" class="hidden pb-10">
+            <button onclick="toggleView('results')" class="mb-4 text-gray-500 flex items-center gap-2">
+                <i class="fa-solid fa-arrow-left"></i> Voltar
+            </button>
+            <div id="recipe-detail-content"></div>
+        </section>
+
+        <section id="favorites-view" class="hidden space-y-4 pb-10">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-500">
+                    <i class="fa-solid fa-heart"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-gray-800">Meus Favoritos</h3>
+                    <p class="text-xs text-gray-500">Receitas salvas para depois</p>
+                </div>
+            </div>
+            <div id="favorites-list" class="space-y-4"></div>
+        </section>
+
+    </main>
+
+    <div id="error-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-6 z-[100]">
+        <div class="bg-white p-6 rounded-2xl max-sm w-full shadow-2xl">
+            <p id="error-message" class="text-gray-600 text-center text-sm mb-6"></p>
+            <button onclick="closeModal()" class="w-full bg-gray-800 text-white py-3 rounded-xl font-bold">Entendido</button>
+        </div>
+    </div>
+
+    <script>
+        const apiKey = "AIzaSyAZd0Kj0Mp6VngXWSI2dIY0nNQAt45xofs"; 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'chef-ia-br';
+        
+        let ingredients = [];
+        let currentRecipes = [];
+        let favorites = JSON.parse(localStorage.getItem('chefia_favs')) || [];
+        let base64Image = null;
+        let isMenuOpen = false;
+        let currentView = 'input';
+        let tipInterval = null;
+
+        const CULINARY_TIPS = [
+            "Para o arroz ficar soltinho, lave-o bem antes de cozinhar.",
+            "Coloque uma pitada de sal em preparos doces para realçar o sabor.",
+            "Nunca lave o frango na pia para evitar contaminação na cozinha.",
+            "Para cebolas não fazerem chorar, deixe-as no congelador por 15 min antes de cortar.",
+            "O segredo de um purê cremoso é adicionar manteiga gelada ao final.",
+            "Não encha demais a panela ao fritar para manter a temperatura do óleo.",
+            "Use ervas frescas apenas no final do preparo para manter o aroma.",
+            "Para massas al dente, siga sempre um minuto a menos do tempo da embalagem.",
+            "Sempre preaqueça o forno por pelo menos 15 minutos antes de assar.",
+            "Aqueça a frigideira antes de colocar a gordura para grelhar carnes.",
+            "Deixe a carne descansar por 5 minutos após grelhar para os sucos se redistribuírem.",
+            "Para um empanado crocante, use farinha Panko ou pão amanhecido triturado."
+        ];
+
+        function startTipRotation() {
+            const tipEl = document.getElementById('loading-tip');
+            if(!tipEl) return;
+            
+            const updateTip = () => {
+                // Remove a classe de animação para reiniciar o ciclo visual
+                tipEl.classList.remove('fade-tip');
+                void tipEl.offsetWidth; // Trigger reflow
+                
+                const randomTip = CULINARY_TIPS[Math.floor(Math.random() * CULINARY_TIPS.length)];
+                tipEl.innerText = randomTip;
+                
+                tipEl.classList.add('fade-tip');
+            };
+            
+            updateTip();
+            // Intervalo aumentado para 6 segundos para dar tempo de ler com calma
+            tipInterval = setInterval(updateTip, 6000);
+        }
+
+        function stopTipRotation() {
+            if(tipInterval) {
+                clearInterval(tipInterval);
+                tipInterval = null;
+            }
+        }
+
+        function toggleView(view) {
+            currentView = view;
+            const views = ['input', 'loading', 'results', 'detail', 'favorites'];
+            
+            if (view === 'loading') {
+                startTipRotation();
+            } else {
+                stopTipRotation();
+            }
+
+            views.forEach(v => {
+                const el = document.getElementById(v + '-view');
+                if(el) el.classList.add('hidden');
+            });
+            const activeView = document.getElementById(view + '-view');
+            if(activeView) activeView.classList.remove('hidden');
+            
+            if (view === 'favorites') renderFavorites();
+            if (view === 'results') renderRecipes();
+            window.scrollTo(0, 0);
+        }
+
+        function toggleMenu() {
+            const menu = document.getElementById('side-menu');
+            const overlay = document.getElementById('menu-overlay');
+            isMenuOpen = !isMenuOpen;
+            if (isMenuOpen) {
+                menu.classList.remove('translate-x-full');
+                overlay.classList.remove('opacity-0', 'pointer-events-none');
+            } else {
+                menu.classList.add('translate-x-full');
+                overlay.classList.add('opacity-0', 'pointer-events-none');
+            }
+        }
+
+        function toggleFavorite(id) {
+            const recipe = [...currentRecipes, ...favorites].find(r => r.id === id);
+            if (!recipe) return;
+
+            const index = favorites.findIndex(f => f.id === id);
+            if (index > -1) {
+                favorites.splice(index, 1);
+            } else {
+                favorites.push(recipe);
+            }
+            
+            localStorage.setItem('chefia_favs', JSON.stringify(favorites));
+            
+            renderRecipes(); 
+            renderFavorites();
+            
+            if (currentView === 'detail') {
+                const favBtn = document.getElementById('detail-fav-btn');
+                if (favBtn) {
+                    const isFav = favorites.some(f => f.id === id);
+                    favBtn.className = `fav-heart ${isFav ? 'fa-solid active' : 'fa-regular'} fa-heart text-xl`;
+                }
+            }
+        }
+
+        function renderFavorites() {
+            const list = document.getElementById('favorites-list');
+            if (!list) return;
+
+            if (favorites.length === 0) {
+                list.innerHTML = `
+                    <div class="text-center py-12 bg-white rounded-2xl border-2 border-dashed border-gray-100">
+                        <i class="fa-solid fa-heart text-4xl text-gray-100 mb-3"></i>
+                        <p class="text-gray-400 text-sm">Sua lista está vazia.</p>
+                        <button onclick="toggleView('input')" class="mt-4 text-orange-500 font-bold text-xs">Começar a Cozinhar</button>
+                    </div>`;
+                return;
+            }
+
+            list.innerHTML = favorites.map(recipe => `
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4 items-center animate-fade-in cursor-pointer" onclick="viewRecipe('${recipe.id}')">
+                    <div class="bg-orange-50 w-12 h-12 rounded-xl flex items-center justify-center text-orange-500 flex-shrink-0">
+                        <i class="fa-solid fa-plate-wheat"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="font-bold text-gray-800 leading-tight">${recipe.nome}</div>
+                        <div class="text-[10px] text-gray-400 mt-1 flex gap-2">
+                           <span class="flex items-center gap-1"><i class="fa-solid fa-clock"></i> ${recipe.tempo}</span>
+                        </div>
+                    </div>
+                    <button onclick="event.stopPropagation(); toggleFavorite('${recipe.id}')" class="p-2 text-red-500">
+                        <i class="fa-solid fa-heart"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                base64Image = e.target.result;
+                
+                // Atualiza interface
+                document.getElementById('preview-img').src = base64Image;
+                document.getElementById('image-preview').classList.remove('hidden');
+                document.getElementById('img-analyzing-state').classList.remove('hidden');
+
+                try {
+                    const base64Data = base64Image.split(',')[1];
+                    
+                    // CORREÇÃO: Modelo 1.5-flash (estável) e endpoint v1beta
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: "Liste apenas os nomes dos ingredientes comestíveis nesta imagem, separados por vírgula. Seja extremamente conciso." },
+                                    { 
+  	inline_data: { 
+    	mime_type: file.type, 
+    	data: base64Data } } // CORREÇÃO: inline_data com underscore
+                                ]
+                            }]
+                        })
+                    });
+
+                    const result = await response.json();
+                    
+                    // Tratamento de erro caso a API retorne erro de segurança ou limite
+                    if (result.error) {
+                        throw new Error(result.error.message);
+                    }
+
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (!text || text.length < 3) {
+  throw new Error("Nenhum ingrediente reconhecido");
+}
+
+const novosIngredientes = text
+  .split(',')
+  .map(i => i.trim().toLowerCase())
+  .filter(i => i.length > 1);
+                        novosIngredientes.forEach(ing => {
+                            if (ing && !ingredients.includes(ing)) {
+                                ingredients.push(ing);
+                            }
+                        });
+                        
+                        // Chama renderTags para mostrar as bolinhas na tela
+                        renderTags();
+                    }
+                } catch (error) {
+                    console.error("Erro na API:", error);
+                    showError("O Chef não conseguiu analisar esta foto agora. Tente uma foto mais clara, com alimentos visíveis.");
+                } finally {
+                    document.getElementById('img-analyzing-state').classList.add('hidden');
+                    // RESET DO CAMPO: Essencial para permitir múltiplos envios seguidos
+                    event.target.value = ""; 
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearImage() {
+            base64Image = null;
+            document.getElementById('image-upload').value = "";
+            document.getElementById('image-preview').classList.add('hidden');
+        }
+
+        function addIngredientFromInput() {
+            const input = document.getElementById('ingredient-input');
+            const val = input.value.trim();
+            if (val) {
+                val.split(',').forEach(item => {
+                    const norm = item.trim().toLowerCase();
+                    if (norm && !ingredients.includes(norm)) ingredients.push(norm);
+                });
+                input.value = '';
+                renderTags();
+            }
+        }
+
+        function renderTags() {
+            const container = document.getElementById('tags-container');
+            const btnClear = document.getElementById('btn-clear-all');
+            if(btnClear) btnClear.classList.toggle('hidden', ingredients.length === 0);
+            container.innerHTML = ingredients.map((ing, idx) => `
+                <span class="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-2">
+                    ${ing} <button onclick="removeIngredient(${idx})"><i class="fa-solid fa-xmark"></i></button>
+                </span>
+            `).join('') || `<p class="text-xs text-gray-400 italic">Nenhum ingrediente adicionado.</p>`;
+        }
+
+        function removeIngredient(idx) { ingredients.splice(idx, 1); renderTags(); }
+        function clearAllIngredients() {
+            ingredients = []; // Limpa a lista
+            base64Image = null; 
+            document.getElementById('image-upload').value = ""; // Reseta o input de arquivo
+            document.getElementById('image-preview').classList.add('hidden'); // Esconde a prévia da foto
+            renderTags(); // Atualiza a tela (vai mostrar "Nenhum ingrediente")
+        }
+
+        async function generateRecipes() {
+            if (ingredients.length === 0) return showError("Adicione ingredientes.");
+            
+            const difficulty = document.getElementById('pref-difficulty').value;
+            const time = document.getElementById('pref-time').value;
+            const type = document.getElementById('pref-type').value;
+
+            toggleView('loading');
+            
+            const prompt = `Gere exatamente 7 receitas baseadas nestes ingredientes: ${ingredients.join(', ')}. 
+            PREFERÊNCIAS OBRIGATÓRIAS DO USUÁRIO:
+            - Dificuldade: ${difficulty}
+            - Tempo máximo: ${time}
+            - Tipo de refeição: ${type}
+            
+            Retorne um JSON com a chave "receitas", que é uma lista de objetos com: "id" (string única), "nome", "tempo", "dificuldade", "ingredientes" (lista de strings), "passos" (lista de strings) e "dica".`;
+
+            try {
+                const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
+                });
+                const data = await response.json();
+                currentRecipes = JSON.parse(data.candidates[0].content.parts[0].text).receitas;
+                renderRecipes();
+                toggleView('results');
+            } catch (err) { 
+                toggleView('input'); 
+                showError("Erro ao gerar receitas. Tente novamente."); 
+            }
+        }
+
+        function renderRecipes() {
+            const list = document.getElementById('recipes-list');
+            if(list) {
+                list.innerHTML = currentRecipes.map(recipe => {
+                    const isFav = favorites.some(f => f.id === recipe.id);
+                    return `
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex gap-4 items-center cursor-pointer relative" onclick="viewRecipe('${recipe.id}')">
+                        <div class="bg-orange-50 w-12 h-12 rounded-xl flex items-center justify-center text-orange-500 flex-shrink-0"><i class="fa-solid fa-plate-wheat"></i></div>
+                        <div class="flex-1">
+                            <div class="font-bold text-gray-800 leading-tight">${recipe.nome}</div>
+                            <div class="text-[10px] text-gray-400 mt-1 flex gap-2">
+                               <span class="flex items-center gap-1"><i class="fa-solid fa-clock"></i> ${recipe.tempo}</span>
+                               <span class="flex items-center gap-1"><i class="fa-solid fa-bolt"></i> ${recipe.dificuldade}</span>
+                            </div>
+                        </div>
+                        <button onclick="event.stopPropagation(); toggleFavorite('${recipe.id}')" class="p-2 ml-auto">
+                            <i class="${isFav ? 'fa-solid active' : 'fa-regular text-gray-300'} fa-heart fav-heart"></i>
+                        </button>
+                        <i class="fa-solid fa-chevron-right text-gray-200 ml-1"></i>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        function sortRecipesByTime() {
+            currentRecipes.sort((a, b) => {
+                const timeA = parseInt(a.tempo) || 0;
+                const timeB = parseInt(b.tempo) || 0;
+                return timeA - timeB;
+            });
+            renderRecipes();
+        }
+
+        async function viewRecipe(id) {
+            const r = [...currentRecipes, ...favorites].find(x => x.id === id);
+            if (!r) return;
+            const isFav = favorites.some(f => f.id === id);
+
+            // 1. Criamos a interface com o aviso de paciência
+            document.getElementById('recipe-detail-content').innerHTML = `
+                <div class="bg-white rounded-3xl p-6 shadow-sm overflow-hidden relative">
+                    <div id="recipe-img-container" class="w-[calc(100%+3rem)] h-64 -mt-6 -mx-6 mb-6 bg-gray-100 flex items-center justify-center overflow-hidden border-b border-gray-100 relative text-orange-400">
+                        <div class="flex flex-col items-center gap-3 px-10 text-center">
+                             <i class="fa-solid fa-circle-notch animate-spin text-3xl"></i>
+                             <p class="text-sm font-bold animate-pulse">O Chef está preparando a imagem...</p>
+                             <p class="text-[10px] text-gray-400 leading-tight">Para garantir a melhor experiência, aguarde a finalização antes de navegar para outra receita.</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 class="text-2xl font-bold leading-tight flex-1 pr-4">${r.nome}</h2>
+                        <button onclick="toggleFavorite('${r.id}')" class="bg-white p-2 rounded-full shadow-md -mt-10 z-20">
+                            <i id="detail-fav-btn" class="${isFav ? 'fa-solid active' : 'fa-regular text-gray-300'} fa-heart text-xl fav-heart"></i>
+                        </button>
+                    </div>
+                    <div class="flex gap-4 mb-4 text-xs font-bold uppercase tracking-wider text-gray-400">
+                        <span class="bg-gray-100 px-2 py-1 rounded-lg"><i class="fa-solid fa-clock"></i> ${r.tempo}</span>
+                        <span class="bg-gray-100 px-2 py-1 rounded-lg"><i class="fa-solid fa-bolt"></i> ${r.dificuldade}</span>
+                    </div>
+                    <div class="mb-6 p-4 bg-orange-50 rounded-2xl italic text-xs border-l-4 border-orange-400">"${r.dica}"</div>
+                    <h4 class="font-bold mb-3 flex items-center gap-2"><i class="fa-solid fa-list-check text-orange-500"></i> Ingredientes:</h4>
+                    <ul class="text-sm mb-6 space-y-1">${r.ingredientes.map(i => `<li class="text-gray-600">• ${i}</li>`).join('')}</ul>
+                    <h4 class="font-bold mb-3 flex items-center gap-2"><i class="fa-solid fa-fire-burner text-orange-500"></i> Modo de Preparo:</h4>
+                    <div class="space-y-3">${r.passos.map((p, i) => `<div class="bg-gray-50 p-4 rounded-2xl text-sm border border-gray-100"><span class="font-black text-orange-400 mr-2">${i+1}</span> ${p}</div>`).join('')}</div>
+                </div>`;
+            
+            toggleView('detail');
+
+            // 2. Bloqueia o botão "Voltar" (Header) temporariamente para evitar bugs
+            const backBtn = document.querySelector('button[onclick="toggleView(\'home\')"]');
+            if(backBtn) {
+                backBtn.style.opacity = "0.3";
+                backBtn.style.pointerEvents = "none";
+            }
+
+            // 3. Busca a imagem (Usando Pollinations Turbo para ser mais rápido)
+            const promptIA = encodeURIComponent(`gourmet photography of ${r.nome}, delicious food`);
+            const urlIA = `https://image.pollinations.ai/prompt/${promptIA}?width=600&height=400&model=turbo&seed=${Math.floor(Math.random()*999)}&nologo=true`;
+
+            const img = new Image();
+            img.onload = () => {
+                const container = document.getElementById('recipe-img-container');
+                if(container) {
+                    container.innerHTML = `<img src="${urlIA}" class="w-full h-full object-cover animate-fade-in">`;
+                    // 4. Libera o botão "Voltar" quando a imagem carrega
+                    if(backBtn) {
+                        backBtn.style.opacity = "1";
+                        backBtn.style.pointerEvents = "auto";
+                    }
+                }
+            };
+            img.src = urlIA;
+        }
+
+        function showError(msg) { 
+            const msgEl = document.getElementById('error-message');
+            const modal = document.getElementById('error-modal');
+            if(msgEl && modal) {
+                msgEl.innerText = msg; 
+                modal.classList.remove('hidden'); 
+                modal.classList.add('flex'); 
+            }
+        }
+        
+        function closeModal() { 
+            const modal = document.getElementById('error-modal');
+            if(modal) modal.classList.add('hidden'); 
+        }
+        
+        async function fetchWithRetry(url, opt) { 
+            for (let i = 0; i < 5; i++) {
+                try {
+                    const res = await fetch(url, opt);
+                    if (res.ok) return res;
+                } catch (e) {}
+                await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+            }
+            throw new Error("Falha após retentativas");
+        }
+
+        window.onload = () => { renderTags(); };
+    </script>
+</body>
+</html>
