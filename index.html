@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -411,56 +410,33 @@
             `).join('');
         }
 
-        async function handleImageUpload(event) {
+        function handleImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = async (e) => {
-                const base64Image = e.target.result;
-                
-                // Interface Visual
+                base64Image = e.target.result;
                 document.getElementById('preview-img').src = base64Image;
                 document.getElementById('image-preview').classList.remove('hidden');
                 document.getElementById('img-analyzing-state').classList.remove('hidden');
-
                 try {
                     const base64Data = base64Image.split(',')[1];
-                    
-                    // MUDANÇA CRUCIAL: Modelo 1.5-flash e sintaxe inline_data
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            contents: [{
-                                parts: [
-                                    { text: "Liste apenas os nomes dos ingredientes visíveis nesta imagem, separados por vírgula. Seja extremamente conciso." },
-                                    { inline_data: { mime_type: "image/jpeg", data: base64Data } }
-                                ]
-                            }]
+                            contents: [{ parts: [{ text: "Liste apenas os ingredientes visíveis nesta imagem, separados por vírgula." }, { inlineData: { mimeType: "image/png", data: base64Data } }] }]
                         })
                     });
-
                     const result = await response.json();
                     const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
                     if (text) {
-                        const novosIngredientes = text.split(',').map(i => i.trim().toLowerCase());
-                        novosIngredientes.forEach(ing => {
-                            if (ing && !ingredients.includes(ing)) {
-                                ingredients.push(ing);
-                            }
+                        text.split(',').map(i => i.trim().toLowerCase()).forEach(ing => {
+                            if (ing && !ingredients.includes(ing)) ingredients.push(ing);
                         });
                         renderTags();
                     }
-                } catch (error) {
-                    console.error("Erro na análise:", error);
-                    showError("O Chef não conseguiu processar esta imagem.");
-                } finally {
-                    document.getElementById('img-analyzing-state').classList.add('hidden');
-                    // LIMPEZA OBRIGATÓRIA: Permite que o navegador aceite novas fotos sem travar
-                    event.target.value = ""; 
-                }
+                } catch (error) { showError("Erro na análise da imagem."); }
+                finally { document.getElementById('img-analyzing-state').classList.add('hidden'); }
             };
             reader.readAsDataURL(file);
         }
@@ -496,13 +472,7 @@
         }
 
         function removeIngredient(idx) { ingredients.splice(idx, 1); renderTags(); }
-        function clearAllIngredients() {
-            ingredients = []; // Limpa a lista
-            base64Image = null; 
-            document.getElementById('image-upload').value = ""; // Reseta o input de arquivo
-            document.getElementById('image-preview').classList.add('hidden'); // Esconde a prévia da foto
-            renderTags(); // Atualiza a tela (vai mostrar "Nenhum ingrediente")
-        }
+        function clearAllIngredients() { ingredients = []; renderTags(); }
 
         async function generateRecipes() {
             if (ingredients.length === 0) return showError("Adicione ingredientes.");
